@@ -1,10 +1,10 @@
 /*
  * Programa de Comparación de Multiplicación de Matrices
- * Implementa 3 algoritmos: CPU OpenMP, GPU Global Memory, GPU Shared Memory
+ * Implementa 4 algoritmos: CPU OpenMP, GPU Global Memory, GPU Shared Memory, GPU Tensors Cores
  * Uso: ./prog <n> <nt> <ALG>
  *   n: Tamaño de la matriz (NxN)
  *   nt: Número de threads CPU (para OpenMP)
- *   ALG: 1=CPU Multicore, 2=GPU Básica, 3=GPU Shared Memory
+ *   ALG: 1=CPU Multicore, 2=GPU Básica, 3=GPU Shared Memory, 4=GPU Tensor Cores
  */
 
 #include <stdio.h>
