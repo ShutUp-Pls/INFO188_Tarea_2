@@ -19,7 +19,8 @@ EXECUTABLE = "./prog"
 ALGORITHMS = {
     1: "CPU OpenMP",
     2: "GPU Global Memory",
-    3: "GPU Shared Memory"
+    3: "GPU Shared Memory",
+    4: "GPU Tensor Cores"
 }
 
 def check_executable():
@@ -36,7 +37,7 @@ def run_benchmark(n, nt, alg):
     Args:
         n: Tamaño de la matriz
         nt: Número de threads CPU
-        alg: Algoritmo (1, 2, o 3)
+        alg: Algoritmo (1, 2, 3 o 4)
     
     Returns:
         float: Tiempo de ejecución en segundos (o None si hay error)
@@ -128,8 +129,8 @@ def plot_execution_times(n_sizes, results):
     """
     plt.figure(figsize=(12, 7))
     
-    colors = {1: 'blue', 2: 'red', 3: 'green'}
-    markers = {1: 'o', 2: 's', 3: '^'}
+    colors = {1: 'blue', 2: 'red', 3: 'green', 4: 'purple'}
+    markers = {1: 'o', 2: 's', 3: '^', 4: '*'}
     
     for alg, name in ALGORITHMS.items():
         times = results[alg]
@@ -171,11 +172,11 @@ def plot_speedup(n_sizes, results):
     
     plt.figure(figsize=(12, 7))
     
-    colors = {2: 'red', 3: 'green'}
-    markers = {2: 's', 3: '^'}
-    labels = {2: 'GPU Global Memory', 3: 'GPU Shared Memory'}
+    colors = {2: 'red', 3: 'green', 4: 'purple'}
+    markers = {2: 's', 3: '^', 4: '*'}
+    labels = {2: 'GPU Global Memory', 3: 'GPU Shared Memory', 4: 'GPU Tensor Cores'}
     
-    for alg in [2, 3]:
+    for alg in [2, 3, 4]:
         speedups = calculate_speedup(cpu_times, results[alg])
         
         # Filtrar valores None
@@ -217,24 +218,28 @@ def print_summary_table(n_sizes, results):
     print("\n" + "="*80)
     print("TABLA RESUMEN DE RESULTADOS")
     print("="*80)
-    print(f"{'N':<8} {'CPU (s)':<12} {'GPU Global (s)':<16} {'GPU Shared (s)':<16} {'Speedup Global':<16} {'Speedup Shared':<16}")
+    print(f"{'N':<8} {'CPU (s)':<12} {'GPU Global (s)':<16} {'GPU Shared (s)':<16} {'GPU Tensor (s)':<16} {'Speedup Global':<16} {'Speedup Shared':<16} {'Speedup Tensor':<16}")
     print("-"*80)
     
     cpu_times = results[1]
     gpu_global_times = results[2]
     gpu_shared_times = results[3]
+    gpu_tensor_cores = results[4]
     
     speedup_global = calculate_speedup(cpu_times, gpu_global_times)
     speedup_shared = calculate_speedup(cpu_times, gpu_shared_times)
+    speedup_tensor = calculate_speedup(cpu_times, gpu_tensor_cores)
     
     for i, n in enumerate(n_sizes):
         cpu_str = f"{cpu_times[i]:.6f}" if cpu_times[i] is not None else "N/A"
         gpu_g_str = f"{gpu_global_times[i]:.6f}" if gpu_global_times[i] is not None else "N/A"
         gpu_s_str = f"{gpu_shared_times[i]:.6f}" if gpu_shared_times[i] is not None else "N/A"
+        gpu_t_str = f"{gpu_tensor_cores[i]:.6f}" if gpu_tensor_cores[i] is not None else "N/A"
         sp_g_str = f"{speedup_global[i]:.2f}x" if speedup_global[i] is not None else "N/A"
         sp_s_str = f"{speedup_shared[i]:.2f}x" if speedup_shared[i] is not None else "N/A"
+        sp_t_str = f"{speedup_tensor[i]:.2f}x" if speedup_tensor[i] is not None else "N/A"
         
-        print(f"{n:<8} {cpu_str:<12} {gpu_g_str:<16} {gpu_s_str:<16} {sp_g_str:<16} {sp_s_str:<16}")
+        print(f"{n:<8} {cpu_str:<12} {gpu_g_str:<16} {gpu_s_str:<16} {gpu_t_str:<16} {sp_g_str:<16} {sp_s_str:<16} {sp_t_str:<16}")
     
     print("="*80)
 

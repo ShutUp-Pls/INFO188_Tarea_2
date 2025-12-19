@@ -1,7 +1,7 @@
 /*
  * Programa de Comparación de Multiplicación de Matrices
  * Implementa 3 algoritmos: CPU OpenMP, GPU Global Memory, GPU Shared Memory
- * Uso: ./matmul_compa <n> <nt> <ALG>
+ * Uso: ./prog <n> <nt> <ALG>
  *   n: Tamaño de la matriz (NxN)
  *   nt: Número de threads CPU (para OpenMP)
  *   ALG: 1=CPU Multicore, 2=GPU Básica, 3=GPU Shared Memory
@@ -10,10 +10,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda_runtime.h>
+#include <cuda_fp16.h>
+#include <mma.h>
 #include <omp.h>
 #include <time.h>
 
 #define TILE_WIDTH 16
+#define WARP_SIZE 32
+
+using namespace nvcuda;
 
 // ============================================================================
 // KERNELS DE GPU
@@ -84,6 +89,66 @@ __global__ void kernel_matmul_tiled(int n, float *a, float *b, float *c) {
     }
 }
 
+// ALG 4: GPU Tensor Cores (WMMA)
+// Helper: Conversión Float -> Half
+__global__ void float_to_half_kernel(float* f, half* h, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n * n) {
+        h[idx] = __float2half(f[idx]);
+    }
+}
+
+// Kernel WMMA: Cada Warp calcula un tile de 16x16
+__global__ void kernel_matmul_wmma(half *a, half *b, float *c, int n) {
+    // Declaración de fragmentos
+    wmma::fragment<wmma::matrix_a, 16, 16, 16, half, wmma::row_major> a_frag;
+    wmma::fragment<wmma::matrix_b, 16, 16, 16, half, wmma::row_major> b_frag;
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag;
+
+    // Inicializar acumulador a 0
+    wmma::fill_fragment(c_frag, 0.0f);
+
+    // Coordenadas globales del Warp
+    // blockDim.y = 4 (4 warps por bloque), threadIdx.y es el índice del warp dentro del bloque (0..3)
+    // blockIdx.y es el índice del bloque vertical
+    int globalWarpM = blockIdx.y * blockDim.y + threadIdx.y;
+    int globalWarpN = blockIdx.x; 
+
+    // Requerimos que N sea múltiplo de 16 para este kernel simple
+    // Iteramos sobre K en pasos de 16
+    for (int i = 0; i < n; i += 16) {
+        // Coordenadas base del tile actual en A y B
+        int aRow = globalWarpM * 16;
+        int aCol = i;
+        
+        int bRow = i;
+        int bCol = globalWarpN * 16;
+        
+        // Bounds checking simple
+        if (aRow < n && bCol < n) {
+            // Cargar A
+            const half* a_ptr = a + aRow * n + aCol;
+            wmma::load_matrix_sync(a_frag, a_ptr, n);
+            
+            // Cargar B
+            const half* b_ptr = b + bRow * n + bCol;
+            wmma::load_matrix_sync(b_frag, b_ptr, n);
+            
+            // Multiplicar y acumular
+            wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
+        }
+    }
+
+    // Almacenar resultado
+    int cRow = globalWarpM * 16;
+    int cCol = globalWarpN * 16;
+    
+    if (cRow < n && cCol < n) {
+        float* c_ptr = c + cRow * n + cCol;
+        wmma::store_matrix_sync(c_ptr, c_frag, n, wmma::mem_row_major);
+    }
+}
+
 // ============================================================================
 // FUNCIONES AUXILIARES
 // ============================================================================
@@ -103,6 +168,13 @@ void check_cuda_error(cudaError_t err, const char *msg) {
     }
 }
 
+
+// A partir de aquí se definen prints para quitar
+// verbosidad en la funcionalidad de los algoritmos
+void print_separator() {
+    printf("========================================\n");
+}
+
 // Muestra información del dispositivo GPU
 void print_device_info() {
     int device;
@@ -111,12 +183,61 @@ void print_device_info() {
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, device);
     
-    printf("========================================\n");
+    print_separator();
     printf("Dispositivo GPU: %s\n", prop.name);
     printf("Compute Capability: %d.%d\n", prop.major, prop.minor);
     printf("Memoria Global: %.2f GB\n", prop.totalGlobalMem / (1024.0 * 1024.0 * 1024.0));
     printf("Multiprocessors: %d\n", prop.multiProcessorCount);
-    printf("========================================\n\n");
+    print_separator();
+}
+
+void print_header(const char* title) {
+    print_separator();
+    printf("%s\n", title);
+    print_separator();
+}
+
+void print_sub_header(const char* title) {
+    printf("\n");
+    print_separator();
+    printf("%s\n", title);
+    print_separator();
+}
+
+void print_matrix_config(int n) {
+    printf("Tamaño de matriz: %d x %d\n", n, n);
+    printf("Elementos totales: %d\n", n * n);
+    print_separator();
+    printf("\n");
+}
+
+void print_cpu_stats(int nt, double elapsed) {
+    printf("Algoritmo: CPU Multicore (OpenMP)\n");
+    printf("Threads CPU: %d\n", nt);
+    printf("Tiempo de ejecución: %.6f segundos\n", elapsed);
+}
+
+void print_gpu_stats(const char* algo_name, dim3 grid, dim3 block, float milliseconds) {
+    printf("Algoritmo: %s\n", algo_name);
+    printf("Grid: (%d, %d), Block: (%d, %d)\n", grid.x, grid.y, block.x, block.y);
+    printf("Tiempo de ejecución: %.6f segundos\n", milliseconds / 1000.0f);
+}
+
+void print_tiled_stats(int tile_w, dim3 grid, dim3 block, float milliseconds) {
+    printf("Algoritmo: GPU Shared Memory (Tiled)\n");
+    printf("Tile Width: %d\n", tile_w);
+    printf("Grid: (%d, %d), Block: (%d, %d)\n", grid.x, grid.y, block.x, block.y);
+    printf("Tiempo de ejecución: %.6f segundos\n", milliseconds / 1000.0f);
+}
+
+void print_verification_result(float *h_c, int n) {
+    print_separator();
+    printf("Verificación de resultados:\n");
+    printf("C[0][0] = %.2f\n", h_c[0]);
+    printf("C[%d][%d] = %.2f\n", n/2, n/2, h_c[(n/2) * n + (n/2)]);
+    printf("C[%d][%d] = %.2f\n", n-1, n-1, h_c[(n-1) * n + (n-1)]);
+    print_separator();
+    printf("\n");
 }
 
 // ============================================================================
@@ -143,9 +264,7 @@ void matmul_cpu_openmp(float *a, float *b, float *c, int n, int nt) {
     double end_time = omp_get_wtime();
     double elapsed = end_time - start_time;
     
-    printf("Algoritmo: CPU Multicore (OpenMP)\n");
-    printf("Threads CPU: %d\n", nt);
-    printf("Tiempo de ejecución: %.6f segundos\n", elapsed);
+    print_cpu_stats(nt, elapsed);
 }
 
 // ALG 2: GPU Básica (Global Memory)
@@ -186,9 +305,7 @@ void matmul_gpu_global(float *h_a, float *h_b, float *h_c, int n) {
     // Copiar resultado de device a host
     check_cuda_error(cudaMemcpy(h_c, d_c, size, cudaMemcpyDeviceToHost), "cudaMemcpy D2H c");
     
-    printf("Algoritmo: GPU Básica (Global Memory)\n");
-    printf("Grid: (%d, %d), Block: (%d, %d)\n", gridDim.x, gridDim.y, blockDim.x, blockDim.y);
-    printf("Tiempo de ejecución: %.6f segundos\n", milliseconds / 1000.0f);
+    print_gpu_stats("GPU Básica (Global Memory)", gridDim, blockDim, milliseconds);
     
     // Liberar memoria
     cudaFree(d_a);
@@ -236,10 +353,7 @@ void matmul_gpu_tiled(float *h_a, float *h_b, float *h_c, int n) {
     // Copiar resultado de device a host
     check_cuda_error(cudaMemcpy(h_c, d_c, size, cudaMemcpyDeviceToHost), "cudaMemcpy D2H c");
     
-    printf("Algoritmo: GPU Shared Memory (Tiled)\n");
-    printf("Tile Width: %d\n", TILE_WIDTH);
-    printf("Grid: (%d, %d), Block: (%d, %d)\n", gridDim.x, gridDim.y, blockDim.x, blockDim.y);
-    printf("Tiempo de ejecución: %.6f segundos\n", milliseconds / 1000.0f);
+    print_tiled_stats(TILE_WIDTH, gridDim, blockDim, milliseconds);
     
     // Liberar memoria
     cudaFree(d_a);
@@ -247,6 +361,75 @@ void matmul_gpu_tiled(float *h_a, float *h_b, float *h_c, int n) {
     cudaFree(d_c);
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
+}
+
+// ALG 4: GPU Tensor Cores (WMMA)
+void matmul_gpu_tc(float *h_a, float *h_b, float *h_c, int n) {
+    // Validar N (WMMA simple prefiere múltiplos de 16)
+    if (n % 16 != 0) {
+        printf("Advertencia: Para Tensor Cores simple, N debe ser múltiplo de 16. Padding virtual no implementado.\n");
+    }
+
+    size_t size_float = n * n * sizeof(float);
+    size_t size_half = n * n * sizeof(half);
+    
+    float *d_c;
+    half *d_a_half, *d_b_half;
+    float *d_a_temp, *d_b_temp; // Temporales para subida y conversión
+
+    check_cuda_error(cudaMalloc(&d_c, size_float), "cudaMalloc d_c");
+    check_cuda_error(cudaMalloc(&d_a_half, size_half), "cudaMalloc d_a_half");
+    check_cuda_error(cudaMalloc(&d_b_half, size_half), "cudaMalloc d_b_half");
+    
+    // Para ser justos, debemos convertir los datos a half.
+    // Usamos punteros temporales float para subir los datos y luego convertirlos
+    check_cuda_error(cudaMalloc(&d_a_temp, size_float), "Malloc temp A");
+    check_cuda_error(cudaMalloc(&d_b_temp, size_float), "Malloc temp B");
+    
+    check_cuda_error(cudaMemcpy(d_a_temp, h_a, size_float, cudaMemcpyHostToDevice), "H2D A");
+    check_cuda_error(cudaMemcpy(d_b_temp, h_b, size_float, cudaMemcpyHostToDevice), "H2D B");
+
+    // Convertir Float a Half (Preparación de datos, no medido en el kernel de cómputo para justicia comparativa)
+    int threads = 256;
+    int blocks = (n * n + threads - 1) / threads;
+    float_to_half_kernel<<<blocks, threads>>>(d_a_temp, d_a_half, n);
+    float_to_half_kernel<<<blocks, threads>>>(d_b_temp, d_b_half, n);
+    check_cuda_error(cudaDeviceSynchronize(), "Float2Half Conv");
+    
+    // Liberar temporales
+    cudaFree(d_a_temp);
+    cudaFree(d_b_temp);
+
+    // Configuración de Grid para WMMA
+    // 1 Warp = 1 Tile (16x16)
+    // Block size = 128 threads (4 warps)
+    dim3 blockDim(32, 4); 
+    // Grid: cubrimos N/16 tiles
+    dim3 gridDim((n / 16 + (blockDim.x/32) - 1) / (blockDim.x/32), (n / 16 + blockDim.y - 1) / blockDim.y);
+    // Ajuste simple: grid.x = Tiles en col, grid.y = Tiles en fila / warps_per_block
+    gridDim.x = n / 16; 
+    gridDim.y = (n / 16 + 3) / 4; // 4 warps en Y por bloque
+
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start); cudaEventCreate(&stop);
+    
+    // Medir SOLO el cómputo matricial (como los otros algoritmos)
+    cudaEventRecord(start);
+    kernel_matmul_wmma<<<gridDim, blockDim>>>(d_a_half, d_b_half, d_c, n);
+    cudaEventRecord(stop);
+    
+    check_cuda_error(cudaGetLastError(), "kernel_matmul_wmma launch");
+    cudaEventSynchronize(stop);
+    
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    
+    check_cuda_error(cudaMemcpy(h_c, d_c, size_float, cudaMemcpyDeviceToHost), "cudaMemcpy D2H c");
+    
+    print_gpu_stats("GPU Tensor Cores (WMMA)", gridDim, blockDim, milliseconds);
+    
+    cudaFree(d_a_half); cudaFree(d_b_half); cudaFree(d_c);
+    cudaEventDestroy(start); cudaEventDestroy(stop);
 }
 
 // ============================================================================
@@ -259,7 +442,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Uso: %s <n> <nt> <ALG>\n", argv[0]);
         fprintf(stderr, "  n:   Tamaño de la matriz (NxN)\n");
         fprintf(stderr, "  nt:  Número de threads CPU (para OpenMP)\n");
-        fprintf(stderr, "  ALG: 1=CPU Multicore, 2=GPU Básica, 3=GPU Shared Memory\n");
+        fprintf(stderr, "  ALG: 1=CPU, 2=GPU Global, 3=GPU Shared, 4=GPU Tensor Cores\n");
         return EXIT_FAILURE;
     }
     
@@ -267,17 +450,13 @@ int main(int argc, char *argv[]) {
     int nt = atoi(argv[2]);
     int alg = atoi(argv[3]);
     
-    if(n <= 0 || nt <= 0 || alg < 1 || alg > 3) {
+    if(n <= 0 || nt <= 0 || alg < 1 || alg > 4) {
         fprintf(stderr, "Error: Parámetros inválidos\n");
         return EXIT_FAILURE;
     }
     
-    printf("\n========================================\n");
-    printf("MULTIPLICACIÓN DE MATRICES\n");
-    printf("========================================\n");
-    printf("Tamaño de matriz: %d x %d\n", n, n);
-    printf("Elementos totales: %d\n", n * n);
-    printf("========================================\n\n");
+    print_header("MULTIPLICACIÓN DE MATRICES");
+    print_matrix_config(n);
     
     // Reservar memoria para matrices en host
     size_t size = n * n * sizeof(float);
@@ -298,8 +477,7 @@ int main(int argc, char *argv[]) {
     // Ejecutar algoritmo seleccionado
     switch(alg) {
         case 1:
-            printf("Hardware: CPU con OpenMP\n");
-            printf("========================================\n");
+            print_sub_header("Hardware: CPU con OpenMP");
             matmul_cpu_openmp(h_a, h_b, h_c, n, nt);
             break;
             
@@ -312,6 +490,11 @@ int main(int argc, char *argv[]) {
             print_device_info();
             matmul_gpu_tiled(h_a, h_b, h_c, n);
             break;
+
+        case 4:
+            print_device_info();
+            matmul_gpu_tc(h_a, h_b, h_c, n);
+            break;
             
         default:
             fprintf(stderr, "Error: Algoritmo no válido\n");
@@ -321,12 +504,7 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
     }
     
-    printf("========================================\n");
-    printf("Verificación de resultados:\n");
-    printf("C[0][0] = %.2f\n", h_c[0]);
-    printf("C[%d][%d] = %.2f\n", n/2, n/2, h_c[(n/2) * n + (n/2)]);
-    printf("C[%d][%d] = %.2f\n", n-1, n-1, h_c[(n-1) * n + (n-1)]);
-    printf("========================================\n\n");
+    print_verification_result(h_c, n);
     
     // Liberar memoria
     free(h_a);
