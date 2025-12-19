@@ -394,10 +394,6 @@ _Este gráfico ilustra la aceleración (speedup) de las versiones GPU respecto a
 
 ---
 
-Aquí tienes la sección final pulida. Se ha estandarizado la descripción de los cuatro algoritmos (incluyendo ahora la variante Tensor Cores que faltaba en este apartado), se ha formalizado la metodología de medición y se han robustecido las referencias bibliográficas para dar un cierre profesional al informe.
-
----
-
 ## Detalles de Implementación
 
 ### 1. CPU Multicore (OpenMP)
