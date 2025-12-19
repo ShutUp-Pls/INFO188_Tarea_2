@@ -413,7 +413,7 @@ void matmul_gpu_tc(float *h_a, float *h_b, float *h_c, int n) {
     cudaEvent_t start, stop;
     cudaEventCreate(&start); cudaEventCreate(&stop);
     
-    // Medir SOLO el cómputo matricial (como los otros algoritmos)
+    // Medir SOLO el cómputo matricial
     cudaEventRecord(start);
     kernel_matmul_wmma<<<gridDim, blockDim>>>(d_a_half, d_b_half, d_c, n);
     cudaEventRecord(stop);
