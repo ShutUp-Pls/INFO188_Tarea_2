@@ -85,7 +85,7 @@ El script detectará automáticamente tu GPU y generará el ejecutable `prog` co
 
 ### 3. Limpiar archivos
 
-Para eliminar el ejecutable y los gráficos `.png` generados por el benchmark:
+Para eliminar el ejecutable compilado:
 
 ```bash
 make clean
