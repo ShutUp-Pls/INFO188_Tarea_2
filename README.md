@@ -1,3 +1,9 @@
+### Miembros del equipo:
+- Nicolás Sandoval Jerez
+- Marco Delgado Saldaña
+- Sebastian Fuentes C.
+- Martín Jaque
+
 # Multiplicación de Matrices: Comparación CPU vs GPU
 
 ## Descripción
