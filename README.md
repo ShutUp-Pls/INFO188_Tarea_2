@@ -50,13 +50,6 @@ El objetivo es analizar el rendimiento de cada enfoque y calcular el speedup de 
 ├── prog                        # Ejecutable (generado tras compilar)
 └── README.md                   # Este archivo
 ```
-
----
-
-Claro que sí. He actualizado las instrucciones para reflejar las nuevas capacidades del `Makefile`, específicamente la **autodetección de arquitectura** (ya no es fijo en `sm_75`), la nueva regla de verificación (`check`) y la limpieza de gráficos.
-
-Aquí tienes la versión corregida y lista para copiar:
-
 ---
 
 ## Instrucciones de Compilación y Ejecución
