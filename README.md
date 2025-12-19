@@ -361,7 +361,7 @@ El rendimiento extremo de los Tensor Cores (Alg 4) se explica no solo por la cap
 
 El speedup de **2346.48x** observado en N=4096 es un hito. Significa que la tarea que a la CPU le tomó casi un minuto, la GPU usando Tensor Cores la realizó en el tiempo que dura un parpadeo (~24ms). Esto confirma que para cargas de trabajo de aprendizaje profundo o simulaciones científicas densas, el uso de Tensor Cores no es opcional, sino obligatorio para obtener rendimiento en tiempo real.
 
-#### Conclusiones Clave (Actualizadas)
+#### Conclusiones Clave (Considerando Tensor Cores)
 
 1. ✅ **Análisis previo ratificado**: Se mantienen las conclusiones sobre las limitaciones de CPU y la eficacia del Tiling.
 2. 🚀 **Supremacía de Hardware**: La implementación de **Tensor Cores (Alg 4) es la clara vencedora**, superando a la versión Shared Memory por un factor de **~7x** y a la CPU por más de **2300x**.
