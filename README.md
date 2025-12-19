@@ -34,9 +34,9 @@ El objetivo es analizar el rendimiento de cada enfoque y calcular el speedup de 
 ```
 ├── plots                       # Carpeta con gráficos generados
 │   ├── speedup_test_tensors.png
-│   ├── speedup_test1.png
+│   ├── speedup_test_principal.png
 │   ├── tiempos_test_tensors.png
-│   └── tiempos_test1.png
+│   └── tiempos_test_principal.png
 ├── benchmark_plot.py           # Script de automatización y visualización
 ├── LICENSE                     # Archivo de licencia
 ├── Makefile                    # Script de compilación
